@@ -77,6 +77,12 @@ class VM:
         self.fake_start_date = None
         self.nic_type = "e1000"
         self.num_nics = 0
+        # If it's cat9kv image, raise the memory size to 18432
+        if "cat9kv" in self.image:
+            ram = 18432
+        # If it's c9800 image, raise the memory size to 8192
+        if "c9800" in self.image:
+            ram = 8192
         # number of nics that are actually *provisioned* (as in nics that will be added to container)
         self.num_provisioned_nics = int(os.environ.get("CLAB_INTFS", 0))
         # "highest" provisioned nic num -- used for making sure we can allocate nics without needing
@@ -113,6 +119,34 @@ class VM:
         self.qemu_args.extend(
             ["-monitor", "tcp:0.0.0.0:40%02d,server,nowait" % self.num]
         )
+                # add cpu host passthrough for better performance and aadd accel=kvm, force qemu to use 4 cpu cores and add telnet session for linux kernal of Cat9kv
+        if "cat9kv" in self.image:
+            self.qemu_args.extend(
+                [
+                    "-cpu",
+                    "host",
+                    "-overcommit",
+                    "mem-lock=off",
+                    "-smp",
+                    "4,sockets=4,cores=1,threads=1",
+                    "-chardev",
+                    "socket,id=charserial1,host=localhost,port=60%02d,telnet,server,nowait" % self.num,
+                    "-device",
+                    "isa-serial,chardev=charserial1,id=serial1",
+                ]
+            )
+         # add cpu host passthrough for better performance and aadd accel=kvm, force qemu to use 4 cpu cores and add telnet session for linux kernal of Cat9800v
+        if "c9800v" in self.image:
+            self.qemu_args.extend(
+                [
+                    "-smp",
+                    "4,sockets=4,cores=1,threads=1",
+                    "-chardev",
+                    "socket,id=charserial1,host=localhost,port=60%02d,telnet,server,nowait" % self.num,
+                    "-device",
+                    "isa-serial,chardev=charserial1,id=serial1",
+                ]
+            )
         self.qemu_args.extend(
             [
                 "-m",
@@ -403,7 +437,12 @@ class VM:
             "hostfwd=udp::2161-10.0.0.15:161,"
             "hostfwd=tcp::2830-10.0.0.15:830,"
             "hostfwd=tcp::2080-10.0.0.15:80,"
-            "hostfwd=tcp::2443-10.0.0.15:443"
+            "hostfwd=tcp::2443-10.0.0.15:443,"
+            "hostfwd=tcp::29339-10.0.0.15:9339,"
+            "hostfwd=tcp::60052-10.0.0.15:50052,"
+            # add domain names which help PnP process for some NOS
+            "dnssearch=lab.local,"
+            "domainname=lab.local"
         )
         return res
 
@@ -702,6 +741,12 @@ class VR:
             )
             run_command(
                 ["socat", "TCP-LISTEN:443,fork", "TCP:127.0.0.1:2443"], background=True
+            )
+            run_command(
+                ["socat", "TCP-LISTEN:9339,fork", "TCP:127.0.0.1:29339"], background=True
+            )
+            run_command(
+                ["socat", "TCP-LISTEN:50052,fork", "TCP:127.0.0.1:60052"], background=True
             )
 
         started = False
